@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audio Visualizer</title>
+    <style>
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="visualizer"></canvas>
+
+    <script>
+    const audio = document.createElement('audio');
+    audio.src = 'audio.mp3';
+    audio.controls = true;
+    document.body.appendChild(audio);
+
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 128;
+
+    const source = audioContext.createMediaElementSource(audio);
+    source.connect(analyser);
+    analyser.connect(audioContext.destination);
+
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const frequencyData = new Uint8Array(analyser.frequencyBinCount);
+
+    const particles = Array.from({ length: 200 }, () => ({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 4,
+        vy: (Math.random() - 0.5) * 4,
+        size: Math.random() * 2 + 1.2,
+        hue: Math.random() * 360,
+    }));
+
+    function distance(p1, p2) {
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function limitVelocity(particle, maxVelocity) {
+        particle.vx = Math.max(Math.min(particle.vx, maxVelocity), -maxVelocity);
+        particle.vy = Math.max(Math.min(particle.vy, maxVelocity), -maxVelocity);
+    }
+
+    function drawVisualizer() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        analyser.getByteFrequencyData(frequencyData);
+
+        const averageVolume = Array.from(frequencyData).reduce((a, b) => a + b) / frequencyData.length - 30;
+        const speedMultiplier = 0.2 + averageVolume / 255;
+
+        particles.forEach((particle, i) => {
+            particle.x += particle.vx * speedMultiplier;
+            particle.y += particle.vy * speedMultiplier;
+
+            const frequency = frequencyData[i % frequencyData.length];
+            particle.size = 4 + (frequency / 190 * 20) || particle.size;
+            particle.hue = (frequency / 255 * 360) || particle.hue;
+
+            ctx.shadowBlur = 5000;
+            ctx.shadowColor = `hsl(${particle.hue}, 100%, 50%)`;
+
+            ctx.beginPath();
+            ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+            ctx.fillStyle = `hsl(${particle.hue}, 100%, 50%)`;
+            ctx.fill();
+
+            if (frequency) {
+                const force = (255 - frequency) / 255 * 0.05;
+                const dx = (canvas.width / 2 - particle.x) * force;
+                const dy = (canvas.height / 2 - particle.y) * force;
+                particle.vx += dx;
+                particle.vy += dy;
+                limitVelocity(particle, 13);
+            }
+
+            particles.slice(i + 1).forEach(otherParticle => {
+                const dist = distance(particle, otherParticle);
+                const force = (dist - 200) * -0.0005;
+
+                const dx = (particle.x - otherParticle.x) / dist;
+                const dy = (particle.y - otherParticle.y) / dist;
+
+                particle.vx += dx * force;
+                particle.vy += dy * force;
+                otherParticle.vx -= dx * force;
+                otherParticle.vy -= dy * force;
+
+                limitVelocity(particle, 15);
+            });
+        });
+
+        requestAnimationFrame(drawVisualizer);
+    }
+
+    drawVisualizer();
+    </script>
+</body>
+</html>
